@@ -1,0 +1,6 @@
+export * from './animal.service.js'
+export * from './pesagem.service.js'
+export * from './movimentacao.service.js'
+export * from './financeiro.service.js'
+export * from './pasto.service.js'
+export * from './saude.service.js'

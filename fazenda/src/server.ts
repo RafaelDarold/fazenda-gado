@@ -1,0 +1,42 @@
+import "dotenv/config";
+import express from "express";
+import cors from "cors";
+import { testConnection } from "./db/index.js";
+import { env } from "./config/env.js";
+import apiRouter from "./api/index.js";
+import { errorMiddleware } from "./api/middlewares/error.middleware.js";
+import { authService } from "./services/auth.service.js";
+
+async function main() {
+  console.log(`\n Sistema de Gerenciamento de Gado iniciando...`);
+  console.log(`   Ambiente : ${env.app.env}`);
+  console.log(`   Banco    : ${env.db.database}@${env.db.host}:${env.db.port}`);
+
+  try {
+    await testConnection();
+    console.log(`   Banco    : conectado com sucesso`);
+  } catch (err) {
+    console.error(`\n Falha ao conectar no banco de dados:`);
+    console.error(err);
+    process.exit(1);
+  }
+
+  // Garante que existe pelo menos um admin
+  await authService.garantirAdminPadrao();
+
+  const app = express();
+
+  app.use(cors({ origin: "http://localhost:5173", credentials: true }));
+  app.use(express.json());
+  app.use("/api", apiRouter);
+  app.use(errorMiddleware);
+
+  app.listen(env.app.port, () => {
+    console.log(`\n Servidor pronto na porta ${env.app.port}`);
+    console.log(`   Frontend : http://localhost:5173`);
+    console.log(`   API      : http://localhost:${env.app.port}/api`);
+    console.log(`   Health   : http://localhost:${env.app.port}/api/health\n`);
+  });
+}
+
+main();
