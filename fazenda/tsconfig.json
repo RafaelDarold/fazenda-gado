@@ -10,19 +10,19 @@
     "moduleDetection": "force",
     "noEmit": true,
     "strict": true,
-    "noUnusedLocals": true,
+    "noUnusedLocals": false,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "skipLibCheck": true,
     "baseUrl": ".",
     "paths": {
-      "@/*":              ["src/*"],
-      "@config/*":        ["src/config/*"],
-      "@db/*":            ["src/db/*"],
-      "@types/*":         ["src/types/*"],
-      "@repositories/*":  ["src/repositories/*"],
-      "@services/*":      ["src/services/*"],
-      "@utils/*":         ["src/utils/*"]
+      "@/*": ["src/*"],
+      "@config/*": ["src/config/*"],
+      "@db/*": ["src/db/*"],
+      "@types/*": ["src/types/*"],
+      "@repositories/*": ["src/repositories/*"],
+      "@services/*": ["src/services/*"],
+      "@utils/*": ["src/utils/*"]
     }
   },
   "include": ["src"]

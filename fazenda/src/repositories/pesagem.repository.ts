@@ -1,24 +1,25 @@
-import { BaseRepository } from './base.repository.js'
-import { query, execute } from '../db/index.js'
-import { uuid } from '../utils/index.js'
+import { BaseRepository } from "./base.repository.js";
+import { query, execute } from "../db/index.js";
+import { uuid } from "../utils/index.js";
 import type {
   Pesagem,
   PesagemDetalhada,
   CreatePesagemDTO,
   UUID,
   DateString,
-} from '../types/index.js'
-import type { PoolConnection } from 'mysql2/promise'
+} from "../types/index.js";
+import type { PoolConnection } from "mysql2/promise";
 
 export class PesagemRepository extends BaseRepository<Pesagem> {
   constructor() {
-    super('pesagem')
+    super("pesagem");
   }
 
   // ── Listagens ───────────────────────────────────────────────────────────────
 
   async findByAnimal(animalId: UUID, limite = 20): Promise<PesagemDetalhada[]> {
-    return query<PesagemDetalhada>(`
+    return query<PesagemDetalhada>(
+      `
       SELECT
         p.*,
         a.brinco        AS animal_brinco,
@@ -37,15 +38,21 @@ export class PesagemRepository extends BaseRepository<Pesagem> {
       WHERE p.animal_id = ?
       ORDER BY p.data DESC
       LIMIT ?
-    `, [animalId, limite])
+    `,
+      [animalId, limite],
+    );
   }
 
-  async findByLote(loteId: UUID, data?: DateString): Promise<PesagemDetalhada[]> {
-    const dateFilter = data ? 'AND p.data = ?' : ''
-    const params: unknown[] = [loteId]
-    if (data) params.push(data)
+  async findByLote(
+    loteId: UUID,
+    data?: DateString,
+  ): Promise<PesagemDetalhada[]> {
+    const dateFilter = data ? "AND p.data = ?" : "";
+    const params: unknown[] = [loteId];
+    if (data) params.push(data);
 
-    return query<PesagemDetalhada>(`
+    return query<PesagemDetalhada>(
+      `
       SELECT
         p.*,
         a.brinco    AS animal_brinco,
@@ -57,12 +64,15 @@ export class PesagemRepository extends BaseRepository<Pesagem> {
       JOIN animal a ON a.id = p.animal_id
       WHERE a.lote_id = ? ${dateFilter}
       ORDER BY p.data DESC, a.brinco
-    `, params)
+    `,
+      params,
+    );
   }
 
   /** Última pesagem de cada animal de um lote — para calcular peso médio */
   async findUltimasPorLote(loteId: UUID): Promise<Pesagem[]> {
-    return query<Pesagem>(`
+    return query<Pesagem>(
+      `
       SELECT p.*
       FROM pesagem p
       JOIN animal a ON a.id = p.animal_id
@@ -70,43 +80,55 @@ export class PesagemRepository extends BaseRepository<Pesagem> {
         AND p.data = (
           SELECT MAX(data) FROM pesagem WHERE animal_id = p.animal_id
         )
-    `, [loteId])
+    `,
+      [loteId],
+    );
   }
 
   // ── Escrita ─────────────────────────────────────────────────────────────────
 
-  async create(dto: CreatePesagemDTO, gmdArroba?: number, conn?: PoolConnection): Promise<Pesagem> {
-    const id = uuid()
+  async create(
+    dto: CreatePesagemDTO,
+    gmdArroba?: number,
+    conn?: PoolConnection,
+  ): Promise<Pesagem> {
+    const id = uuid();
     const sql = `
-      INSERT INTO pesagem (id, animal_id, data, peso_arroba, gmd_arroba, responsavel, observacao)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `
+      INSERT INTO pesagem (id, fazenda_id, animal_id, data, peso_arroba, gmd_arroba, responsavel, observacao)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `;
     const params = [
       id,
+      (dto as any).fazenda_id ?? "",
       dto.animal_id,
       dto.data,
       dto.peso_arroba,
       gmdArroba ?? null,
       dto.responsavel ?? null,
-      dto.observacao  ?? null,
-    ]
+      dto.observacao ?? null,
+    ];
 
     if (conn) {
-      await conn.execute(sql, params)
+      await conn.execute(sql, params);
+      const [[row]] = await conn.query<any[]>(
+        "SELECT * FROM pesagem WHERE id = ? LIMIT 1",
+        [id],
+      );
+      return row;
     } else {
-      await execute(sql, params)
+      await execute(sql, params);
     }
-    return (await this.findById(id))!
+    return (await this.findById(id))!;
   }
 
   /** Retorna a pesagem mais recente de um animal */
   async findUltima(animalId: UUID): Promise<Pesagem | null> {
     const rows = await query<Pesagem>(
-      'SELECT * FROM pesagem WHERE animal_id = ? ORDER BY data DESC LIMIT 1',
+      "SELECT * FROM pesagem WHERE animal_id = ? ORDER BY data DESC LIMIT 1",
       [animalId],
-    )
-    return rows[0] ?? null
+    );
+    return rows[0] ?? null;
   }
 }
 
-export const pesagemRepository = new PesagemRepository()
+export const pesagemRepository = new PesagemRepository();

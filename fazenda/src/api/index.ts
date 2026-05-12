@@ -8,31 +8,39 @@ import saudeRoutes from "./routes/saude.routes.js";
 import loteRoutes from "./routes/lote.routes.js";
 import recategorizacaoRoutes from "./routes/recategorizacao.routes.js";
 import authRoutes from "./routes/auth.routes.js";
-import { autenticar, exigirPerfil } from "./middlewares/auth.middleware.js";
+import fazendaRoutes from "./routes/fazenda.routes.js";
+import racaRoutes from "./routes/raca.routes.js";
+import {
+  autenticar,
+  exigirPerfil,
+  injetarFazenda,
+} from "./middlewares/auth.middleware.js";
 
 const router = Router();
 
-// Auth — publica
+// Publica
 router.use("/auth", authRoutes);
 
-// Rotas acessiveis por todos os usuarios autenticados
-router.use("/animais", autenticar, animalRoutes);
-router.use("/pesagens", autenticar, pesagemRoutes);
-router.use("/lotes", autenticar, loteRoutes);
-router.use("/saude", autenticar, saudeRoutes);
-router.use("/recategorizacao", autenticar, recategorizacaoRoutes);
+// Gestao de fazendas — owner e super_admin
+router.use("/fazendas", fazendaRoutes);
+router.use("/racas", racaRoutes);
 
-// Pastos — autenticado, caseiro pode acessar
-router.use("/pastos", autenticar, pastoRoutes);
-
-// Rotas restritas ao admin
-router.use(
-  "/movimentacoes",
+// Middleware para todas as rotas de dados: autentica + injeta fazenda_id
+const dadosMiddleware = [autenticar, injetarFazenda];
+const apenasAdmin = [
   autenticar,
-  exigirPerfil("admin"),
-  movimentacaoRoutes,
-);
-router.use("/financeiro", autenticar, exigirPerfil("admin"), financeiroRoutes);
+  injetarFazenda,
+  exigirPerfil("owner", "super_admin", "admin"),
+];
+
+router.use("/animais", ...dadosMiddleware, animalRoutes);
+router.use("/pesagens", ...dadosMiddleware, pesagemRoutes);
+router.use("/lotes", ...dadosMiddleware, loteRoutes);
+router.use("/saude", ...dadosMiddleware, saudeRoutes);
+router.use("/recategorizacao", ...dadosMiddleware, recategorizacaoRoutes);
+router.use("/pastos", ...dadosMiddleware, pastoRoutes);
+router.use("/movimentacoes", ...apenasAdmin, movimentacaoRoutes);
+router.use("/financeiro", ...apenasAdmin, financeiroRoutes);
 
 router.get("/health", (_req, res) => {
   res.json({

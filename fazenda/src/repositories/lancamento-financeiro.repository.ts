@@ -22,6 +22,8 @@ export class LancamentoFinanceiroRepository extends BaseRepository<LancamentoFin
     super("lancamento_financeiro");
   }
 
+  // ── Listagem com filtros ────────────────────────────────────────────────────
+
   async findAll(
     filtro: FiltroLancamento = {},
     pagination?: PaginationParams,
@@ -95,7 +97,7 @@ export class LancamentoFinanceiroRepository extends BaseRepository<LancamentoFin
     };
   }
 
-  async findPendentes(): Promise<LancamentoDetalhado[]> {
+  async findPendentes(fazendaId?: string): Promise<LancamentoDetalhado[]> {
     return query<LancamentoDetalhado>(`
       SELECT lf.*, cf.nome AS categoria_nome, p.nome AS pasto_nome,
              COALESCE(lf.valor_final, lf.valor_estimado) AS valor_efetivo
@@ -103,6 +105,7 @@ export class LancamentoFinanceiroRepository extends BaseRepository<LancamentoFin
       JOIN categoria_financeira cf ON cf.id = lf.categoria_id
       LEFT JOIN pasto p ON p.id = lf.pasto_id
       WHERE lf.status = 'pendente'
+        ${fazendaId ? `AND lf.fazenda_id = '${fazendaId}'` : ""}
       ORDER BY lf.data DESC
     `);
   }
@@ -124,8 +127,18 @@ export class LancamentoFinanceiroRepository extends BaseRepository<LancamentoFin
     );
   }
 
-  async resumoPeriodo(dataInicio: DateString, dataFim: DateString) {
-    return query<{ tipo: string; total: string; quantidade: number }>(
+  // ── Resumo financeiro para dashboard ───────────────────────────────────────
+
+  async resumoPeriodo(
+    dataInicio: DateString,
+    dataFim: DateString,
+    fazendaId?: string,
+  ) {
+    return query<{
+      tipo: string;
+      total: string;
+      quantidade: number;
+    }>(
       `
       SELECT
         tipo,
@@ -134,11 +147,14 @@ export class LancamentoFinanceiroRepository extends BaseRepository<LancamentoFin
       FROM lancamento_financeiro
       WHERE status != 'cancelado'
         AND data BETWEEN ? AND ?
+        ${fazendaId ? `AND fazenda_id = '${fazendaId}'` : ""}
       GROUP BY tipo
     `,
       [dataInicio, dataFim],
     );
   }
+
+  // ── Escrita ─────────────────────────────────────────────────────────────────
 
   async create(
     dto: CreateLancamentoDTO,
@@ -146,16 +162,18 @@ export class LancamentoFinanceiroRepository extends BaseRepository<LancamentoFin
   ): Promise<LancamentoFinanceiro> {
     const id = uuid();
     const sql = `
-      INSERT INTO lancamento_financeiro
-        (id, data, tipo, categoria_id, status, valor_final, descricao,
-         forma_pagamento, pago, data_vencimento, data_pagamento, pasto_id, observacao)
-      VALUES (?, ?, ?, ?, 'confirmado', ?, ?, ?, ?, ?, ?, ?, ?)
-    `;
+  INSERT INTO lancamento_financeiro
+    (id, fazenda_id, data, tipo, categoria_id, status, valor_final, descricao,
+     forma_pagamento, pago, data_vencimento, data_pagamento, pasto_id, observacao)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`;
     const params = [
       id,
+      (dto as any).fazenda_id ?? "",
       dto.data,
       dto.tipo,
       dto.categoria_id,
+      "confirmado",
       dto.valor_final,
       dto.descricao,
       dto.forma_pagamento ?? null,
@@ -167,11 +185,11 @@ export class LancamentoFinanceiroRepository extends BaseRepository<LancamentoFin
     ];
     if (conn) {
       await conn.execute(sql, params);
-      const [rows] = await conn.query(
+      const [[row]] = await conn.query<any[]>(
         "SELECT * FROM lancamento_financeiro WHERE id = ? LIMIT 1",
         [id],
       );
-      return (rows as any[])[0] as LancamentoFinanceiro;
+      return row;
     } else {
       await execute(sql, params);
       return (await this.findById(id))!;
@@ -185,12 +203,13 @@ export class LancamentoFinanceiroRepository extends BaseRepository<LancamentoFin
     const id = uuid();
     const sql = `
       INSERT INTO lancamento_financeiro
-        (id, data, tipo, categoria_id, status, valor_final, descricao,
+        (id, fazenda_id, data, tipo, categoria_id, status, valor_final, descricao,
          forma_pagamento, pago, data_vencimento)
       VALUES (?, ?, 'despesa', ?, 'confirmado', ?, ?, ?, 0, ?)
     `;
     const params = [
       id,
+      (dto as any).fazenda_id ?? "",
       dto.data,
       dto.categoria_id,
       dto.valor_final,
@@ -200,17 +219,18 @@ export class LancamentoFinanceiroRepository extends BaseRepository<LancamentoFin
     ];
     if (conn) {
       await conn.execute(sql, params);
-      const [rows] = await conn.query(
+      const [[row]] = await conn.query<any[]>(
         "SELECT * FROM lancamento_financeiro WHERE id = ? LIMIT 1",
         [id],
       );
-      return (rows as any[])[0] as LancamentoFinanceiro;
+      return row;
     } else {
       await execute(sql, params);
       return (await this.findById(id))!;
     }
   }
 
+  /** Etapa 1 da venda ao frigorífico — cria lançamento pendente */
   async createVendaFrigorifico(
     dto: CreateLancamentoVendaFrigorificoDTO,
     conn?: PoolConnection,
@@ -218,12 +238,13 @@ export class LancamentoFinanceiroRepository extends BaseRepository<LancamentoFin
     const id = uuid();
     const sql = `
       INSERT INTO lancamento_financeiro
-        (id, data, tipo, categoria_id, status, valor_estimado, descricao,
+        (id, fazenda_id, data, tipo, categoria_id, status, valor_estimado, descricao,
          forma_pagamento, pago, observacao)
       VALUES (?, ?, 'receita', ?, 'pendente', ?, ?, ?, 0, ?)
     `;
     const params = [
       id,
+      (dto as any).fazenda_id ?? "",
       dto.data,
       dto.categoria_id,
       dto.valor_estimado ?? null,
@@ -233,56 +254,53 @@ export class LancamentoFinanceiroRepository extends BaseRepository<LancamentoFin
     ];
     if (conn) {
       await conn.execute(sql, params);
-      const [rows] = await conn.query(
+      const [[row]] = await conn.query<any[]>(
         "SELECT * FROM lancamento_financeiro WHERE id = ? LIMIT 1",
         [id],
       );
-      return (rows as any[])[0] as LancamentoFinanceiro;
+      return row;
     } else {
       await execute(sql, params);
       return (await this.findById(id))!;
     }
   }
 
+  /** Etapa 2 — confirma o lançamento com valor real do boletim */
   async confirmarVenda(
     id: UUID,
     dto: ConfirmarLancamentoVendaDTO,
-    conn?: PoolConnection,
   ): Promise<LancamentoFinanceiro | null> {
-    const sql = `
-    UPDATE lancamento_financeiro
-    SET status          = 'confirmado',
-        valor_final     = ?,
-        forma_pagamento = COALESCE(?, forma_pagamento),
-        data_vencimento = COALESCE(?, data_vencimento),
-        observacao      = COALESCE(?, observacao)
-    WHERE id = ?
-  `;
-    const params = [
-      dto.valor_final,
-      dto.forma_pagamento ?? null,
-      dto.data_vencimento ?? null,
-      dto.observacao ?? null,
-      id,
-    ];
-    if (conn) {
-      await conn.execute(sql, params);
-    } else {
-      await execute(sql, params);
-    }
+    await execute(
+      `
+      UPDATE lancamento_financeiro
+      SET status          = 'confirmado',
+          valor_final     = ?,
+          forma_pagamento = COALESCE(?, forma_pagamento),
+          data_vencimento = COALESCE(?, data_vencimento),
+          observacao      = COALESCE(?, observacao)
+      WHERE id = ?
+    `,
+      [
+        dto.valor_final,
+        dto.forma_pagamento ?? null,
+        dto.data_vencimento ?? null,
+        dto.observacao ?? null,
+        id,
+      ],
+    );
     return this.findById(id);
   }
 
   async marcarComoPago(id: UUID, dataPagamento: DateString): Promise<void> {
     await execute(
-      "UPDATE lancamento_financeiro SET pago = 1, data_pagamento = ? WHERE id = ?",
+      `UPDATE lancamento_financeiro SET pago = 1, data_pagamento = ? WHERE id = ?`,
       [dataPagamento, id],
     );
   }
 
   async cancelar(id: UUID): Promise<void> {
     await execute(
-      "UPDATE lancamento_financeiro SET status = 'cancelado' WHERE id = ?",
+      `UPDATE lancamento_financeiro SET status = 'cancelado' WHERE id = ? AND is_sistema != 1`,
       [id],
     );
   }
@@ -292,7 +310,7 @@ export class LancamentoFinanceiroRepository extends BaseRepository<LancamentoFin
     status: StatusLancamento,
     conn?: PoolConnection,
   ): Promise<void> {
-    const sql = "UPDATE lancamento_financeiro SET status = ? WHERE id = ?";
+    const sql = `UPDATE lancamento_financeiro SET status = ? WHERE id = ?`;
     if (conn) {
       await conn.execute(sql, [status, id]);
     } else {

@@ -1,12 +1,14 @@
 import { Router } from "express";
-import { authService } from '../../services/auth.service.js'
+import { authService } from "../../services/auth.service.js";
 import { asyncHandler } from "../middlewares/error.middleware.js";
 import { autenticar, exigirPerfil } from "../middlewares/auth.middleware.js";
+import { rateLimitLogin } from "../middlewares/security.middleware.js";
 
 const router = Router();
 
 router.post(
   "/login",
+  rateLimitLogin,
   asyncHandler(async (req, res) => {
     const { email, senha } = req.body;
     if (!email || !senha) {
@@ -31,9 +33,10 @@ router.get(
 router.get(
   "/usuarios",
   autenticar,
-  exigirPerfil("admin"),
-  asyncHandler(async (_req, res) => {
-    const usuarios = await authService.listar();
+  exigirPerfil("owner", "super_admin", "admin"),
+  asyncHandler(async (req, res) => {
+    const fazendaId = req.usuario?.fazenda_id ?? undefined;
+    const usuarios = await authService.listar(fazendaId);
     res.json({ success: true, data: usuarios });
   }),
 );
@@ -41,7 +44,7 @@ router.get(
 router.post(
   "/usuarios",
   autenticar,
-  exigirPerfil("admin"),
+  exigirPerfil("owner", "super_admin", "admin"),
   asyncHandler(async (req, res) => {
     const { nome, email, senha, perfil } = req.body;
     if (!nome || !email || !senha || !perfil) {
@@ -50,7 +53,14 @@ router.post(
         .json({ success: false, message: "Campos obrigatorios faltando" });
       return;
     }
-    const usuario = await authService.criar(nome, email, senha, perfil);
+    const fazendaId = req.usuario?.fazenda_id ?? undefined;
+    const usuario = await authService.criar(
+      nome,
+      email,
+      senha,
+      perfil,
+      fazendaId,
+    );
     res.status(201).json({ success: true, data: usuario });
   }),
 );
@@ -58,9 +68,9 @@ router.post(
 router.patch(
   "/usuarios/:id/toggle",
   autenticar,
-  exigirPerfil("admin"),
+  exigirPerfil("owner", "super_admin", "admin"),
   asyncHandler(async (req, res) => {
-    await authService.toggleAtivo(req.params["id"] as string);
+    await authService.toggleAtivo(req.params["id"] as string, req.usuario!.id);
     res.json({ success: true, message: "Status atualizado" });
   }),
 );
@@ -75,7 +85,12 @@ router.patch(
       return;
     }
     const { nome, email } = req.body;
-    const usuario = await authService.atualizarDados(id, nome, email);
+    const usuario = await authService.atualizarDados(
+      id,
+      nome,
+      email,
+      req.usuario!.id,
+    );
     res.json({ success: true, data: usuario });
   }),
 );
@@ -83,7 +98,7 @@ router.patch(
 router.patch(
   "/usuarios/:id/redefinir-senha",
   autenticar,
-  exigirPerfil("admin"),
+  exigirPerfil("owner", "super_admin", "admin"),
   asyncHandler(async (req, res) => {
     const { nova_senha } = req.body;
     if (!nova_senha) {
@@ -92,7 +107,11 @@ router.patch(
         .json({ success: false, message: "Nova senha obrigatoria" });
       return;
     }
-    await authService.redefinirSenha(req.params["id"] as string, nova_senha);
+    await authService.redefinirSenha(
+      req.params["id"] as string,
+      nova_senha,
+      req.usuario!.id,
+    );
     res.json({ success: true, message: "Senha redefinida" });
   }),
 );
@@ -100,7 +119,7 @@ router.patch(
 router.delete(
   "/usuarios/:id",
   autenticar,
-  exigirPerfil("admin"),
+  exigirPerfil("owner", "super_admin", "admin"),
   asyncHandler(async (req, res) => {
     await authService.excluir(req.params["id"] as string, req.usuario!.id);
     res.json({ success: true, message: "Usuario excluido" });
@@ -135,7 +154,11 @@ router.patch(
         });
       return;
     }
-    await authService.redefinirSenha(req.usuario!.id, nova_senha);
+    await authService.redefinirSenha(
+      req.usuario!.id,
+      nova_senha,
+      req.usuario!.id,
+    );
     res.json({ success: true, message: "Senha trocada com sucesso" });
   }),
 );

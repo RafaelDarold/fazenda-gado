@@ -4,7 +4,6 @@ import {
   type PerfilUsuario,
 } from "../../services/auth.service.js";
 
-// Extende o tipo Request para incluir o usuário autenticado
 declare global {
   namespace Express {
     interface Request {
@@ -13,9 +12,6 @@ declare global {
   }
 }
 
-/**
- * Middleware de autenticação — valida o JWT e injeta o usuário no request.
- */
 export function autenticar(
   req: Request,
   res: Response,
@@ -23,15 +19,11 @@ export function autenticar(
 ): void {
   const header = req.headers.authorization;
   if (!header?.startsWith("Bearer ")) {
-    res
-      .status(401)
-      .json({ success: false, message: "Token de autenticacao nao fornecido" });
+    res.status(401).json({ success: false, message: "Token nao fornecido" });
     return;
   }
-
   try {
-    const token = header.slice(7);
-    req.usuario = authService.verificarToken(token);
+    req.usuario = authService.verificarToken(header.slice(7));
     next();
   } catch {
     res
@@ -40,14 +32,15 @@ export function autenticar(
   }
 }
 
-/**
- * Middleware de autorização — verifica se o usuário tem o perfil necessário.
- * Uso: router.post('/rota', autenticar, exigirPerfil('admin'), handler)
- */
 export function exigirPerfil(...perfis: PerfilUsuario[]) {
   return (req: Request, res: Response, next: NextFunction): void => {
     if (!req.usuario) {
       res.status(401).json({ success: false, message: "Nao autenticado" });
+      return;
+    }
+    // owner sempre tem acesso
+    if (req.usuario.perfil === "owner") {
+      next();
       return;
     }
     if (!perfis.includes(req.usuario.perfil)) {
@@ -58,4 +51,39 @@ export function exigirPerfil(...perfis: PerfilUsuario[]) {
     }
     next();
   };
+}
+
+/**
+ * Middleware que injeta fazenda_id no request a partir do usuario autenticado.
+ * Para owner e super_admin, aceita fazenda_id via header X-Fazenda-Id.
+ */
+export function injetarFazenda(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  if (!req.usuario) {
+    res.status(401).json({ success: false, message: "Nao autenticado" });
+    return;
+  }
+
+  const u = req.usuario;
+  if (u.perfil === "owner" || u.perfil === "super_admin") {
+    // Podem operar em qualquer fazenda via header
+    const fazendaHeader = req.headers["x-fazenda-id"] as string | undefined;
+    if (fazendaHeader) {
+      req.usuario = { ...u, fazenda_id: fazendaHeader };
+    }
+    // Se nao tiver header e for super_admin/owner sem fazenda, exige o header
+    if (!req.usuario.fazenda_id && u.perfil !== "owner") {
+      res
+        .status(400)
+        .json({
+          success: false,
+          message: "Header X-Fazenda-Id obrigatorio para super_admin",
+        });
+      return;
+    }
+  }
+  next();
 }

@@ -203,7 +203,7 @@ export async function animalDetalhePage(params: Record<string, string>) {
               </div>
               <div class="form-group">
                 <label class="form-label">Data de nascimento</label>
-                <input class="form-input" name="data_nascimento" type="date" value="${a.data_nascimento ?? ""}">
+                <input class="form-input" name="data_nascimento" type="date" value="${a.data_nascimento ? a.data_nascimento.slice(0, 10) : ""}">
               </div>
             </div>
 

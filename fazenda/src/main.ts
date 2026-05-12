@@ -15,6 +15,7 @@ import { saudePage } from "./pages/saude.js";
 import { relatoriosPage } from "./pages/relatorios.js";
 import { recategorizacaoPage } from "./pages/recategorizacao.js";
 import { configuracoesPage } from "./pages/configuracoes.js";
+import { painelPage } from "./pages/painel.js";
 
 function paginaAcesso() {
   document.getElementById("root")!.innerHTML = `
@@ -35,12 +36,30 @@ function proteger<T extends unknown[]>(fn: (...args: T) => void) {
       router.navigate("/login");
       return;
     }
-    // Forca troca de senha se for primeiro acesso
     if (auth.precisaTrocarSenha()) {
       router.navigate("/trocar-senha");
       return;
     }
+
+    const perfil = auth.usuario()?.perfil;
+    const fazendaSelecionada = localStorage.getItem("fazenda_selecionada_id");
     const rota = window.location.hash.slice(1) || "/";
+
+    // Owner/super_admin sem fazenda selecionada so podem acessar /painel e /configuracoes
+    if (
+      (perfil === "owner" || perfil === "super_admin") &&
+      !fazendaSelecionada
+    ) {
+      if (
+        rota !== "/painel" &&
+        rota !== "/configuracoes" &&
+        !rota.startsWith("/trocar-senha")
+      ) {
+        router.navigate("/painel");
+        return;
+      }
+    }
+
     if (!podeAcessar(rota)) {
       paginaAcesso();
       return;
@@ -79,6 +98,7 @@ router
     "/configuracoes",
     proteger(() => configuracoesPage("minha-conta")),
   )
+  .on("/painel", proteger(painelPage))
   .notFound(() => {
     if (!auth.logado()) {
       router.navigate("/login");

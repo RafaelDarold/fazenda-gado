@@ -9,6 +9,9 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     ...(options?.headers as Record<string, string>),
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
+  // Envia fazenda selecionada para owner/super_admin
+  const fazendaSelecionada = localStorage.getItem("fazenda_selecionada_id");
+  if (fazendaSelecionada) headers["X-Fazenda-Id"] = fazendaSelecionada;
 
   const res = await fetch(`${BASE}${path}`, { ...options, headers });
   const json = await res.json();

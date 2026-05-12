@@ -119,48 +119,52 @@ export class MovimentacaoRepository extends BaseRepository<Movimentacao> {
 
   async create(
     dados: {
-      animal_id: UUID
-      tipo: TipoMovimentacao
-      direcao: DirecaoMovimentacao
-      data: string
-      pasto_destino_id?: UUID
-      lote_destino_id?: UUID
-      origem_destino?: string
-      causa_obito?: string
-      lancamento_financeiro_id?: UUID
-      numero_gta?: string
-      observacao?: string
+      animal_id: UUID;
+      tipo: TipoMovimentacao;
+      direcao: DirecaoMovimentacao;
+      data: string;
+      pasto_destino_id?: UUID;
+      lote_destino_id?: UUID;
+      origem_destino?: string;
+      causa_obito?: string;
+      lancamento_financeiro_id?: UUID;
+      numero_gta?: string;
+      observacao?: string;
     },
     conn?: PoolConnection,
   ): Promise<Movimentacao> {
-    const id = uuid()
+    const id = uuid();
     const sql = `
       INSERT INTO movimentacao
-        (id, animal_id, tipo, direcao, data, pasto_destino_id, lote_destino_id,
+        (id, fazenda_id, animal_id, tipo, direcao, data, pasto_destino_id, lote_destino_id,
          origem_destino, causa_obito, lancamento_financeiro_id, numero_gta, observacao)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `;
     const params = [
       id,
       dados.animal_id,
       dados.tipo,
       dados.direcao,
       dados.data,
-      dados.pasto_destino_id         ?? null,
-      dados.lote_destino_id          ?? null,
-      dados.origem_destino           ?? null,
-      dados.causa_obito              ?? null,
+      dados.pasto_destino_id ?? null,
+      dados.lote_destino_id ?? null,
+      dados.origem_destino ?? null,
+      dados.causa_obito ?? null,
       dados.lancamento_financeiro_id ?? null,
-      dados.numero_gta               ?? null,
-      dados.observacao               ?? null,
-    ]
+      dados.numero_gta ?? null,
+      dados.observacao ?? null,
+    ];
+
     if (conn) {
-      await conn.execute(sql, params)
-      const [rows] = await conn.query('SELECT * FROM movimentacao WHERE id = ? LIMIT 1', [id])
-      return (rows as any[])[0] as Movimentacao
+      await conn.execute(sql, params);
+      const [[row]] = await conn.query<any[]>(
+        "SELECT * FROM movimentacao WHERE id = ? LIMIT 1",
+        [id],
+      );
+      return row;
     } else {
-      await execute(sql, params)
-      return (await this.findById(id))!
+      await execute(sql, params);
+      return (await this.findById(id))!;
     }
   }
 

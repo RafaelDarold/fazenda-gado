@@ -48,13 +48,12 @@ export class AnimalRepository extends BaseRepository<Animal> {
       LEFT JOIN pasto   p   ON p.id  = l.pasto_atual_id
       LEFT JOIN animal  mae ON mae.id = a.mae_id
       LEFT JOIN animal  pai ON pai.id = a.pai_id
-      LEFT JOIN (
-        SELECT animal_id, peso_arroba, data, gmd_arroba
-        FROM pesagem
-        WHERE (animal_id, data) IN (
-          SELECT animal_id, MAX(data) FROM pesagem GROUP BY animal_id
-        )
-      ) ult ON ult.animal_id = a.id
+      LEFT JOIN pesagem ult ON ult.id = (
+        SELECT id FROM pesagem
+        WHERE animal_id = a.id
+        ORDER BY data DESC, created_at DESC
+        LIMIT 1
+      )
       WHERE a.id = ?
       LIMIT 1
     `,
@@ -95,6 +94,10 @@ export class AnimalRepository extends BaseRepository<Animal> {
       conditions.push("a.brinco LIKE ?");
       values.push(`%${filtro.brinco}%`);
     }
+    if (filtro.fazenda_id) {
+      conditions.push("a.fazenda_id = ?");
+      values.push(filtro.fazenda_id);
+    }
 
     const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
     const page = Math.max(1, pagination?.page ?? 1);
@@ -107,13 +110,12 @@ export class AnimalRepository extends BaseRepository<Animal> {
       LEFT JOIN pasto  p   ON p.id   = l.pasto_atual_id
       LEFT JOIN animal mae ON mae.id = a.mae_id
       LEFT JOIN animal pai ON pai.id = a.pai_id
-      LEFT JOIN (
-        SELECT animal_id, peso_arroba, data, gmd_arroba
-        FROM pesagem
-        WHERE (animal_id, data) IN (
-          SELECT animal_id, MAX(data) FROM pesagem GROUP BY animal_id
-        )
-      ) ult ON ult.animal_id = a.id
+      LEFT JOIN pesagem ult ON ult.id = (
+        SELECT id FROM pesagem
+        WHERE animal_id = a.id
+        ORDER BY data DESC, created_at DESC
+        LIMIT 1
+      )
       ${where}
     `;
 
@@ -151,7 +153,20 @@ export class AnimalRepository extends BaseRepository<Animal> {
   /** Retorna todos os animais de um lote — usado na pesagem em lote */
   async findByLote(loteId: UUID): Promise<Animal[]> {
     return query<Animal>(
-      "SELECT * FROM animal WHERE lote_id = ? AND ativo = 1 ORDER BY brinco",
+      `
+      SELECT a.*,
+        ult.peso_arroba AS ultimo_peso_arroba,
+        ult.data        AS ultima_pesagem_data
+      FROM animal a
+      LEFT JOIN pesagem ult ON ult.id = (
+        SELECT id FROM pesagem
+        WHERE animal_id = a.id
+        ORDER BY data DESC, created_at DESC
+        LIMIT 1
+      )
+      WHERE a.lote_id = ? AND a.ativo = 1
+      ORDER BY a.brinco
+    `,
       [loteId],
     );
   }
@@ -172,13 +187,14 @@ export class AnimalRepository extends BaseRepository<Animal> {
   ): Promise<Animal> {
     const id = uuid();
     const sql = `
-    INSERT INTO animal
-      (id, brinco, nome, raca, sexo, categoria, data_nascimento,
-       mae_id, pai_id, lote_id, peso_entrada_arroba, observacao)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `;
+      INSERT INTO animal
+        (id, fazenda_id, brinco, nome, raca, sexo, categoria, data_nascimento,
+         mae_id, pai_id, lote_id, peso_entrada_arroba, observacao)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `;
     const params = [
       id,
+      dto.fazenda_id ?? "",
       dto.brinco,
       dto.nome ?? null,
       dto.raca,
@@ -194,16 +210,17 @@ export class AnimalRepository extends BaseRepository<Animal> {
 
     if (conn) {
       await conn.execute(sql, params);
-      const [rows] = await conn.query<any[]>(
+      const [[row]] = await conn.query<any[]>(
         "SELECT * FROM animal WHERE id = ? LIMIT 1",
         [id],
       );
-      return rows[0] as Animal;
+      return row as Animal;
     } else {
       await execute(sql, params);
       return (await this.findById(id))!;
     }
   }
+
   async update(id: UUID, dto: UpdateAnimalDTO): Promise<Animal | null> {
     const fields: string[] = [];
     const values: unknown[] = [];

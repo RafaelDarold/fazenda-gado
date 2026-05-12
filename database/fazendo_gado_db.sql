@@ -330,3 +330,122 @@ SET FOREIGN_KEY_CHECKS = 1;
 -- =============================================================================
 -- FIM DO SCHEMA
 -- =============================================================================
+
+CREATE TABLE IF NOT EXISTS parametro_recategorizacao (
+  id CHAR(36) NOT NULL DEFAULT (UUID()),
+  categoria_de ENUM('bezerro','bezerra','novilha','vaca','boi','touro') NOT NULL,
+  categoria_para ENUM('bezerro','bezerra','novilha','vaca','boi','touro') NOT NULL,
+  meses_minimos INT NOT NULL,
+  ativo TINYINT(1) NOT NULL DEFAULT 1,
+  observacao VARCHAR(200),
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_param_de_para (categoria_de, categoria_para)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO parametro_recategorizacao (id, categoria_de, categoria_para, meses_minimos, observacao) VALUES
+  (UUID(), 'bezerro', 'boi',     12, 'Bezerro macho apos desmama'),
+  (UUID(), 'bezerra', 'novilha', 12, 'Bezerra femea apos desmama'),
+  (UUID(), 'novilha', 'vaca',    24, 'Novilha apos idade adulta');
+
+CREATE TABLE IF NOT EXISTS historico_recategorizacao (
+  id CHAR(36) NOT NULL DEFAULT (UUID()),
+  animal_id CHAR(36) NOT NULL,
+  categoria_de VARCHAR(20) NOT NULL,
+  categoria_para VARCHAR(20) NOT NULL,
+  data DATE NOT NULL,
+  responsavel VARCHAR(100),
+  observacao TEXT,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  CONSTRAINT fk_hrec_animal FOREIGN KEY (animal_id) REFERENCES animal(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS usuario (
+  id           CHAR(36)     NOT NULL DEFAULT (UUID()),
+  nome         VARCHAR(100) NOT NULL,
+  email        VARCHAR(150) NOT NULL,
+  senha_hash   VARCHAR(255) NOT NULL,
+  perfil       ENUM('admin','caseiro') NOT NULL DEFAULT 'caseiro',
+  ativo        TINYINT(1)   NOT NULL DEFAULT 1,
+  created_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_usuario_email (email)
+)
+
+ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE usuario ADD COLUMN senha_temporaria TINYINT(1) NOT NULL DEFAULT 1;
+UPDATE usuario SET senha_temporaria = 1;
+
+CREATE TABLE IF NOT EXISTS fazenda (
+  id            CHAR(36)     NOT NULL DEFAULT (UUID()),
+  nome          VARCHAR(150) NOT NULL,
+  razao_social  VARCHAR(200),
+  cnpj          VARCHAR(20),
+  endereco      VARCHAR(300),
+  telefone      VARCHAR(30),
+  email         VARCHAR(150),
+  logo_url      VARCHAR(500),
+  ativo         TINYINT(1)   NOT NULL DEFAULT 1,
+  created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE usuario MODIFY COLUMN perfil ENUM('owner','super_admin','admin','caseiro') NOT NULL DEFAULT 'caseiro';
+
+ALTER TABLE usuario ADD COLUMN fazenda_id CHAR(36) NULL AFTER perfil;
+
+ALTER TABLE animal       ADD COLUMN fazenda_id CHAR(36) NOT NULL DEFAULT '' AFTER id;
+ALTER TABLE lote         ADD COLUMN fazenda_id CHAR(36) NOT NULL DEFAULT '' AFTER id;
+ALTER TABLE pasto        ADD COLUMN fazenda_id CHAR(36) NOT NULL DEFAULT '' AFTER id;
+ALTER TABLE pesagem      ADD COLUMN fazenda_id CHAR(36) NOT NULL DEFAULT '' AFTER id;
+ALTER TABLE movimentacao ADD COLUMN fazenda_id CHAR(36) NOT NULL DEFAULT '' AFTER id;
+ALTER TABLE lancamento_financeiro    ADD COLUMN fazenda_id CHAR(36) NOT NULL DEFAULT '' AFTER id;
+ALTER TABLE saude_evento             ADD COLUMN fazenda_id CHAR(36) NOT NULL DEFAULT '' AFTER id;
+ALTER TABLE parametro_recategorizacao ADD COLUMN fazenda_id CHAR(36) NOT NULL DEFAULT '' AFTER id;
+ALTER TABLE historico_recategorizacao ADD COLUMN fazenda_id CHAR(36) NOT NULL DEFAULT '' AFTER id;
+ALTER TABLE ocupacao_pasto           ADD COLUMN fazenda_id CHAR(36) NOT NULL DEFAULT '' AFTER id;
+ALTER TABLE abastecimento_cocho      ADD COLUMN fazenda_id CHAR(36) NOT NULL DEFAULT '' AFTER id;
+ALTER TABLE boletim_abate            ADD COLUMN fazenda_id CHAR(36) NOT NULL DEFAULT '' AFTER id;
+
+CREATE TABLE IF NOT EXISTS raca_bovina (
+  id         CHAR(36)     NOT NULL DEFAULT (UUID()),
+  nome       VARCHAR(100) NOT NULL,
+  origem     VARCHAR(100),
+  ativo      TINYINT(1)   NOT NULL DEFAULT 1,
+  created_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_raca_nome (nome)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO raca_bovina (nome, origem) VALUES
+('Nelore','Brasil'),('Angus','Escócia'),('Brahman','EUA'),('Hereford','Inglaterra'),
+('Simmental','Suíça'),('Charolês','França'),('Limousin','França'),('Senepol','Ilhas Virgens'),
+('Brangus','EUA'),('Canchim','Brasil'),('Tabapuã','Brasil'),('Gir','Índia'),
+('Guzerá','Índia'),('Indubrasil','Brasil'),('Girolanda','Brasil'),('Caracu','Brasil'),
+('Pantaneiro','Brasil'),('Aberdeen Angus','Escócia'),('Red Angus','EUA'),('Wagyu','Japão'),
+('Shorthorn','Inglaterra'),('Devon','Inglaterra'),('Santa Gertrudis','EUA'),('Beefmaster','EUA'),
+('Braford','Austrália'),('Simbrasil','Brasil'),('Nelore Mocho','Brasil'),('Misto','Brasil'),
+('Não definida','Brasil');
+
+SET FOREIGN_KEY_CHECKS = 0;
+
+TRUNCATE TABLE boletim_abate;
+TRUNCATE TABLE historico_recategorizacao;
+TRUNCATE TABLE parametro_recategorizacao;
+TRUNCATE TABLE saude_evento;
+TRUNCATE TABLE abastecimento_cocho;
+TRUNCATE TABLE ocupacao_pasto;
+TRUNCATE TABLE lancamento_financeiro;
+TRUNCATE TABLE movimentacao;
+TRUNCATE TABLE pesagem;
+TRUNCATE TABLE animal;
+TRUNCATE TABLE lote;
+TRUNCATE TABLE pasto;
+TRUNCATE TABLE usuario;
+TRUNCATE TABLE fazenda;
+
+SET FOREIGN_KEY_CHECKS = 1;

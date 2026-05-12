@@ -56,11 +56,20 @@ export async function movimentacoesPage(abaInicial: Aba = "historico") {
   );
 
   try {
-    const [lotesRes, animaisRes] = await Promise.all([
+    const [lotesRes, animaisRes, racasRes] = await Promise.all([
       api.get<{ data: Lote[] }>("/lotes"),
       api.get<{ data: Animal[] }>("/animais?pageSize=500"),
+      api
+        .get<{ data: { id: string; nome: string }[] }>("/racas")
+        .catch(() => ({ data: [] })),
     ]);
 
+    const racasDatalist =
+      '<datalist id="racas-list">' +
+      racasRes.data
+        .map((r: { nome: string }) => `<option value="${r.nome}">`)
+        .join("") +
+      "</datalist>";
     const lotes = lotesRes.data;
     const animais = animaisRes.data;
     const ativos = animais.filter((a) => a);
@@ -89,7 +98,7 @@ function renderTela(aba: Aba, lotes: Lote[], animais: Animal[]) {
   const abas = `
     <div style="display:flex;gap:var(--sp-2);flex-wrap:wrap;margin-bottom:var(--sp-6)">
       ${abaBtn("compra", "Compra", "🛒", aba)}
-      ${abaBtn("venda", "Venda Frigorífico", "🏭", aba)}
+      ${abaBtn("venda", "Venda", "", aba)}
       ${abaBtn("obito", "Óbito", "✝", aba)}
       ${abaBtn("nascimento", "Nascimento", "🐄", aba)}
       ${abaBtn("historico", "Histórico", "📋", aba)}
@@ -101,7 +110,7 @@ function renderTela(aba: Aba, lotes: Lote[], animais: Animal[]) {
   if (aba === "compra") {
     conteudo = formCompra(lotesOpts);
   } else if (aba === "venda") {
-    conteudo = formVenda(animais, lotesOpts);
+    conteudo = modalTipoVenda();
   } else if (aba === "obito") {
     conteudo = formObito(animaisOpts);
   } else if (aba === "nascimento") {
@@ -132,7 +141,7 @@ function renderTela(aba: Aba, lotes: Lote[], animais: Animal[]) {
 
   // Bind dos formulários
   if (aba === "compra") bindCompra(lotes);
-  if (aba === "venda") bindVenda(animais);
+  if (aba === "venda") bindModalTipoVenda(animais, lotesOpts);
   if (aba === "obito") bindObito();
   if (aba === "nascimento") bindNascimento();
   if (aba === "historico") carregarHistoricoMov();
@@ -312,7 +321,7 @@ function renderAnimaisCompra() {
         </div>
         <div>
           <div class="form-label">Raça *</div>
-          <input class="form-input" value="${a.raca}" placeholder="Nelore"
+          <input class="form-input" value="${a.raca}" placeholder="Nelore" list="racas-list"
             onchange="window.__updateAnimal(${a.id},'raca',this.value)" style="padding:6px 10px">
         </div>
         <div>
@@ -359,7 +368,7 @@ function renderAnimaisCompra() {
   if (totalEl)
     totalEl.innerHTML = `Total: <strong style="color:var(--verde-escuro)">${formatBRL(total)}</strong> (${animaisCompra.length} animal(is))`;
 
-  // Expõe funções globais para os handlers inline
+    // Expõe funções globais para os handlers inline
   (window as any).__updateAnimal = (
     id: number,
     campo: string,
@@ -375,6 +384,80 @@ function renderAnimaisCompra() {
     animaisCompra = animaisCompra.filter((x) => x.id !== id);
     renderAnimaisCompra();
   };
+}
+
+// MODAL SELECAO TIPO DE VENDA
+
+function modalTipoVenda(): string {
+  return `
+    <div style="display:flex;align-items:center;justify-content:center;min-height:300px">
+      <div class="card" style="max-width:560px;width:100%">
+        <div class="card__title" style="text-align:center;font-size:1.3rem;margin-bottom:var(--sp-2)">Tipo de Venda</div>
+        <p class="text-muted text-sm" style="text-align:center;margin-bottom:var(--sp-6)">Selecione como sera realizada a venda dos animais</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-4)">
+          <button id="btn-tipo-frigorifico" style="
+            border:2px solid var(--cor-borda);border-radius:var(--raio-md);
+            padding:var(--sp-6);background:var(--cor-surface);cursor:pointer;
+            transition:all .2s;text-align:center;font-family:inherit
+          ">
+            <div style="font-size:2rem;margin-bottom:var(--sp-3)">🏭</div>
+            <div style="font-family:var(--fonte-display);font-size:1rem;font-weight:700;color:var(--verde-escuro);margin-bottom:var(--sp-2)">Frigorifico</div>
+            <div style="font-size:.8rem;color:var(--cor-texto-3);line-height:1.4">Venda por rendimento de carcaca com boletim de abate em 2 etapas</div>
+          </button>
+          <button id="btn-tipo-direta" style="
+            border:2px solid var(--cor-borda);border-radius:var(--raio-md);
+            padding:var(--sp-6);background:var(--cor-surface);cursor:pointer;
+            transition:all .2s;text-align:center;font-family:inherit
+          ">
+            <div style="font-size:2rem;margin-bottom:var(--sp-3)">🤝</div>
+            <div style="font-family:var(--fonte-display);font-size:1rem;font-weight:700;color:var(--verde-escuro);margin-bottom:var(--sp-2)">Venda Direta</div>
+            <div style="font-size:.8rem;color:var(--cor-texto-3);line-height:1.4">Venda para pecuarista por peso vivo ou valor por cabeca</div>
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function bindModalTipoVenda(animais: Animal[], lotesOpts: string) {
+  const hovers = ["btn-tipo-frigorifico", "btn-tipo-direta"];
+  hovers.forEach((id) => {
+    const btn = document.getElementById(id);
+    btn?.addEventListener("mouseenter", () => {
+      if (btn) {
+        btn.style.borderColor = "var(--verde-claro)";
+        btn.style.background = "var(--verde-suave)";
+      }
+    });
+    btn?.addEventListener("mouseleave", () => {
+      if (btn) {
+        btn.style.borderColor = "var(--cor-borda)";
+        btn.style.background = "var(--cor-surface)";
+      }
+    });
+  });
+
+  document
+    .getElementById("btn-tipo-frigorifico")
+    ?.addEventListener("click", () => {
+      const app =
+        document.querySelector('#app > div[style*="display:flex"]')
+          ?.parentElement ?? document.getElementById("app");
+      if (app) {
+        app.innerHTML = formVenda(animais, lotesOpts);
+        bindVenda(animais);
+      }
+    });
+
+  document.getElementById("btn-tipo-direta")?.addEventListener("click", () => {
+    const app =
+      document.querySelector('#app > div[style*="display:flex"]')
+        ?.parentElement ?? document.getElementById("app");
+    if (app) {
+      app.innerHTML = formVendaDireta(lotesOpts);
+      bindVendaDireta(animais);
+    }
+  });
 }
 
 // VENDA FRIGORIFICO
@@ -864,10 +947,416 @@ async function carregarPendentesVenda() {
 
 // ── ÓBITO ────────────────────────────────────────────────────────────────────
 
+// VENDA DIRETA
+
+function formVendaDireta(lotesOpts: string): string {
+  return `
+    <div style="display:flex;gap:var(--sp-2);margin-bottom:var(--sp-5)">
+      <button class="btn btn--fantasma aba-venda-voltar" style="padding:var(--sp-2) var(--sp-4)">← Voltar</button>
+    </div>
+    <div class="card">
+      <div class="card__title">Venda Direta para Pecuarista</div>
+      <form id="form-venda-direta">
+        <div class="form-grid form-grid--2">
+          <div class="form-group">
+            <label class="form-label">Comprador *</label>
+            <input class="form-input" name="comprador" required placeholder="Nome do comprador">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Data da venda *</label>
+            <input class="form-input" name="data" type="date" required value="${hoje()}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">GTA</label>
+            <input class="form-input" name="numero_gta" placeholder="Numero da GTA">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Forma de pagamento *</label>
+            <select class="form-select" name="forma_pagamento" required>
+              <option value="avista">A vista</option>
+              <option value="pix">PIX</option>
+              <option value="transferencia">Transferencia</option>
+              <option value="prazo">A prazo</option>
+              <option value="parcelas">Parcelado</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Lote + tipo de preco lado a lado -->
+        <div class="form-grid form-grid--2">
+          <div class="form-group">
+            <label class="form-label">Lote de origem *</label>
+            <select class="form-select" name="lote_id" id="sel-lote-venda-direta" required>
+              <option value="">Selecione o lote</option>
+              ${lotesOpts}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Tipo de Precificacao *</label>
+            <select class="form-select" id="sel-tipo-preco-direta">
+              <option value="por_cabeca">Por cabeca (valor fixo por animal)</option>
+              <option value="por_peso">Por peso vivo (@)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Campo R$/@ (aparece quando por_peso) -->
+        <div id="campo-arroba-global" style="display:none" class="form-grid form-grid--2">
+          <div class="form-group">
+            <label class="form-label">R$/@ negociado *</label>
+            <input class="form-input" id="valor-arroba-global" type="number" step="0.01" placeholder="Ex: 320.00">
+            <p class="text-sm text-muted" style="margin-top:4px">O valor de cada animal sera calculado automaticamente pelo peso.</p>
+          </div>
+        </div>
+
+        <!-- Campo valor por cabeca global (aparece quando por_cabeca) -->
+        <div id="campo-cabeca-global" class="form-grid form-grid--2">
+          <div class="form-group">
+            <label class="form-label">Valor por cabeca (R$)</label>
+            <input class="form-input" id="valor-cabeca-global" type="number" step="0.01" placeholder="Preenche todos os animais">
+            <p class="text-sm text-muted" style="margin-top:4px">Preencha para popular todos os animais. Altere individualmente se necessario.</p>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:var(--sp-2);margin-bottom:var(--sp-3)">
+          <button type="button" class="btn btn--fantasma" id="btn-carregar-direta">Carregar animais do lote</button>
+        </div>
+
+        <!-- Tabela de animais -->
+        <div id="tabela-animais-direta" style="display:none;margin-bottom:var(--sp-4)">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--sp-3)">
+            <span class="text-sm text-muted" id="info-animais-direta"></span>
+            <div style="display:flex;gap:var(--sp-2)">
+              <span class="text-sm text-muted">Total:</span>
+              <strong id="total-venda-direta" style="color:var(--verde-medio);font-size:1rem">R$ 0,00</strong>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table id="tb-animais-direta">
+              <thead>
+                <tr>
+                  <th style="width:36px"></th>
+                  <th>Brinco</th>
+                  <th>Nome</th>
+                  <th>Categoria</th>
+                  <th class="text-right">Peso atual (@)</th>
+                  <th class="text-right">Valor (R$)</th>
+                  <th class="text-right">Subtotal</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-animais-direta"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Observacao</label>
+          <textarea class="form-textarea" name="observacao" rows="2"></textarea>
+        </div>
+        <button type="submit" class="btn btn--primario w-full" id="btn-confirmar-venda-direta" disabled>
+          Confirmar Venda Direta
+        </button>
+      </form>
+    </div>
+  `;
+}
+
+interface AnimalDireta {
+  id: string;
+  brinco: string;
+  nome: string | null;
+  categoria: string;
+  ultimo_peso_arroba: string | null;
+  peso: number;
+  valor: number;
+  incluido: boolean;
+}
+
+function bindVendaDireta(animaisParam: Animal[]) {
+  let animaisDireta: AnimalDireta[] = [];
+
+  document.querySelector(".aba-venda-voltar")?.addEventListener("click", () => {
+    const app = document.getElementById("app");
+    if (app) {
+      app.innerHTML = modalTipoVenda();
+      bindModalTipoVenda(animaisParam, "");
+    }
+  });
+
+  const getTipoPreco = () =>
+    (document.getElementById("sel-tipo-preco-direta") as HTMLSelectElement)
+      .value;
+
+  // Renderiza a tabela completa — chamado apenas ao carregar ou trocar tipo
+  const renderTabela = () => {
+    const tbody = document.getElementById("tbody-animais-direta")!;
+    const tipo = getTipoPreco();
+    const arroba =
+      parseFloat(
+        (document.getElementById("valor-arroba-global") as HTMLInputElement)
+          ?.value,
+      ) || 0;
+
+    if (tipo === "por_peso" && arroba > 0) {
+      animaisDireta.forEach((a) => {
+        if (a.incluido) a.valor = +(a.peso * arroba).toFixed(2);
+      });
+    }
+
+    tbody.innerHTML = animaisDireta
+      .map(
+        (a, idx) => `
+      <tr id="row-direta-${idx}" style="opacity:${a.incluido ? 1 : 0.4}">
+        <td>
+          <input type="checkbox" class="check-direta-row" data-idx="${idx}"
+            ${a.incluido ? "checked" : ""}
+            style="width:15px;height:15px;accent-color:var(--verde-medio)">
+        </td>
+        <td><strong>${a.brinco}</strong></td>
+        <td>${a.nome ?? "-"}</td>
+        <td><span class="badge badge--verde">${a.categoria}</span></td>
+        <td class="text-right">
+          <input type="number" step="0.001" class="form-input peso-direta-input" data-idx="${idx}"
+            value="${a.peso > 0 ? a.peso : ""}" placeholder="Informe (@)"
+            style="width:110px;padding:4px 8px;text-align:right">
+        </td>
+        <td class="text-right">
+          <input type="number" step="0.01" class="form-input valor-direta-input" data-idx="${idx}"
+            value="${a.incluido && a.valor > 0 ? a.valor : ""}" placeholder="-"
+            style="width:110px;padding:4px 8px;text-align:right"
+            ${!a.incluido ? "disabled" : ""}>
+        </td>
+        <td class="text-right subtotal-direta-${idx}" style="font-weight:700;color:var(--verde-medio)">
+          ${a.incluido && a.valor > 0 ? formatBRL(a.valor) : "-"}
+        </td>
+      </tr>`,
+      )
+      .join("");
+
+    atualizarTotais();
+    bindLinhasTabela();
+  };
+
+  // Atualiza apenas totais e subtotais — sem re-renderizar HTML
+  const atualizarTotais = () => {
+    let totalGeral = 0;
+    animaisDireta.forEach((a, idx) => {
+      const subtotal = a.incluido ? a.valor : 0;
+      totalGeral += subtotal;
+      const cel = document.querySelector(`.subtotal-direta-${idx}`);
+      if (cel)
+        cel.textContent = a.incluido && a.valor > 0 ? formatBRL(a.valor) : "-";
+    });
+    document.getElementById("total-venda-direta")!.textContent =
+      formatBRL(totalGeral);
+    document.getElementById("info-animais-direta")!.textContent =
+      `${animaisDireta.filter((a) => a.incluido).length} de ${animaisDireta.length} animal(is) incluido(s)`;
+    const btnConf = document.getElementById(
+      "btn-confirmar-venda-direta",
+    ) as HTMLButtonElement;
+    btnConf.disabled = !animaisDireta.some((a) => a.incluido && a.valor > 0);
+  };
+
+  // Bind dos eventos das linhas — chamado após renderTabela
+  const bindLinhasTabela = () => {
+    document
+      .querySelectorAll<HTMLInputElement>(".check-direta-row")
+      .forEach((cb) => {
+        cb.addEventListener("change", () => {
+          const idx = parseInt(cb.dataset.idx!);
+          animaisDireta[idx].incluido = cb.checked;
+          const row = document.getElementById(`row-direta-${idx}`);
+          if (row) row.style.opacity = cb.checked ? "1" : ".4";
+          const valInput = document.querySelector<HTMLInputElement>(
+            `.valor-direta-input[data-idx="${idx}"]`,
+          );
+          if (valInput) valInput.disabled = !cb.checked;
+          atualizarTotais();
+        });
+      });
+
+    document
+      .querySelectorAll<HTMLInputElement>(".peso-direta-input")
+      .forEach((inp) => {
+        inp.addEventListener("input", () => {
+          const idx = parseInt(inp.dataset.idx!);
+          const peso = parseFloat(inp.value) || 0;
+          animaisDireta[idx].peso = peso;
+          if (getTipoPreco() === "por_peso") {
+            const arr =
+              parseFloat(
+                (
+                  document.getElementById(
+                    "valor-arroba-global",
+                  ) as HTMLInputElement
+                )?.value,
+              ) || 0;
+            animaisDireta[idx].valor = +(peso * arr).toFixed(2);
+            const valInput = document.querySelector<HTMLInputElement>(
+              `.valor-direta-input[data-idx="${idx}"]`,
+            );
+            if (valInput)
+              valInput.value =
+                animaisDireta[idx].valor > 0
+                  ? String(animaisDireta[idx].valor)
+                  : "";
+          }
+          atualizarTotais();
+        });
+      });
+
+    document
+      .querySelectorAll<HTMLInputElement>(".valor-direta-input")
+      .forEach((inp) => {
+        inp.addEventListener("input", () => {
+          animaisDireta[parseInt(inp.dataset.idx!)].valor =
+            parseFloat(inp.value) || 0;
+          atualizarTotais();
+        });
+      });
+  };
+
+  // Alias para compatibilidade com chamadas existentes
+  const atualizarTabela = renderTabela;
+
+  // Toggle tipo preco
+  document
+    .getElementById("sel-tipo-preco-direta")
+    ?.addEventListener("change", () => {
+      const isPeso = getTipoPreco() === "por_peso";
+      (
+        document.getElementById("campo-arroba-global") as HTMLElement
+      ).style.display = isPeso ? "grid" : "none";
+      (
+        document.getElementById("campo-cabeca-global") as HTMLElement
+      ).style.display = isPeso ? "none" : "grid";
+      atualizarTabela();
+    });
+
+  // R/@ global recalcula tudo
+  document
+    .getElementById("valor-arroba-global")
+    ?.addEventListener("input", atualizarTabela);
+
+  // Valor por cabeca global popula todos
+  document
+    .getElementById("valor-cabeca-global")
+    ?.addEventListener("input", () => {
+      const vlr =
+        parseFloat(
+          (document.getElementById("valor-cabeca-global") as HTMLInputElement)
+            .value,
+        ) || 0;
+      animaisDireta.forEach((a) => {
+        if (a.incluido) a.valor = vlr;
+      });
+      atualizarTabela();
+    });
+
+  // Carregar animais
+  document
+    .getElementById("btn-carregar-direta")
+    ?.addEventListener("click", async () => {
+      const loteId = (
+        document.getElementById("sel-lote-venda-direta") as HTMLSelectElement
+      ).value;
+      if (!loteId) {
+        toast.warning("Selecione o lote primeiro");
+        return;
+      }
+      try {
+        const res = await api.get<{
+          data: Array<{
+            id: string;
+            brinco: string;
+            nome: string | null;
+            categoria: string;
+            ultimo_peso_arroba: string | null;
+          }>;
+        }>(`/lotes/${loteId}/animais`);
+        if (res.data.length === 0) {
+          toast.warning("Nenhum animal neste lote");
+          return;
+        }
+
+        animaisDireta = res.data.map((a) => ({
+          id: a.id,
+          brinco: a.brinco,
+          nome: a.nome,
+          categoria: a.categoria,
+          ultimo_peso_arroba: a.ultimo_peso_arroba,
+          peso: a.ultimo_peso_arroba ? parseFloat(a.ultimo_peso_arroba) : 0,
+          valor: 0,
+          incluido: true,
+        }));
+        (
+          document.getElementById("tabela-animais-direta") as HTMLElement
+        ).style.display = "block";
+        atualizarTabela();
+      } catch {
+        toast.error("Erro ao carregar animais");
+      }
+    });
+
+  // Submit
+  document
+    .getElementById("form-venda-direta")
+    ?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const incluidos = animaisDireta.filter((a) => a.incluido && a.valor > 0);
+      if (incluidos.length === 0) {
+        toast.warning("Nenhum animal com valor informado");
+        return;
+      }
+
+      const data = Object.fromEntries(
+        new FormData(e.target as HTMLFormElement),
+      );
+      const tipoPreco = getTipoPreco();
+      const loteId = (
+        document.getElementById("sel-lote-venda-direta") as HTMLSelectElement
+      ).value;
+      const valorTotal = incluidos.reduce((s, a) => s + a.valor, 0);
+      const arrobaGlobal =
+        parseFloat(
+          (document.getElementById("valor-arroba-global") as HTMLInputElement)
+            ?.value,
+        ) || 0;
+
+      try {
+        await api.post("/movimentacoes/venda/direta", {
+          data: data.data,
+          comprador: data.comprador,
+          lote_id: loteId,
+          animal_ids: incluidos.map((a) => a.id),
+          tipo_preco: tipoPreco,
+          valor_total: valorTotal,
+          valor_por_arroba: tipoPreco === "por_peso" ? arrobaGlobal : undefined,
+          animais_valores: incluidos.map((a) => ({
+            animal_id: a.id,
+            peso: a.peso,
+            valor: a.valor,
+          })),
+          forma_pagamento: data.forma_pagamento,
+          numero_gta: data.numero_gta || undefined,
+          observacao: data.observacao || undefined,
+        });
+        toast.success(
+          `Venda direta de ${incluidos.length} animal(is) registrada! Total: ${formatBRL(valorTotal)}`,
+        );
+        movimentacoesPage("historico");
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Erro ao registrar venda",
+        );
+      }
+    });
+}
+
 function formObito(animaisOpts: string) {
   return `
-    <div class="card" style="max-width:560px">
-      <div class="card__title">✝ Registrar Óbito</div>
+    <div class="card">
+      <div class="card__title">✝ Registrar Obito</div>
       <form id="form-obito">
         <div class="form-group">
           <label class="form-label">Animal *</label>
@@ -938,9 +1427,9 @@ function bindObito() {
 // ── NASCIMENTO ───────────────────────────────────────────────────────────────
 
 function formNascimento(lotesOpts: string, animaisOpts: string) {
-  void animaisOpts; // substituido por filtros especificos abaixo
+  void animaisOpts;
   return `
-    <div class="card" style="max-width:560px">
+    <div class="card">
       <div class="card__title">Registrar Nascimento</div>
       <form id="form-nascimento">
         <div class="form-grid form-grid--2">
@@ -953,10 +1442,20 @@ function formNascimento(lotesOpts: string, animaisOpts: string) {
             <input class="form-input" name="brinco" required placeholder="Ex: 201">
           </div>
           <div class="form-group">
+            <label class="form-label">Nome</label>
+            <input class="form-input" name="nome" placeholder="Opcional">
+          </div>
+          <div class="form-group">
             <label class="form-label">Sexo *</label>
             <select class="form-select" name="sexo" required>
               <option value="M">Macho (Bezerro)</option>
               <option value="F">Femea (Bezerra)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Raca *</label>
+            <select class="form-select" name="raca" id="sel-raca-nasc" required>
+              <option value="">Carregando...</option>
             </select>
           </div>
           <div class="form-group">
@@ -988,7 +1487,7 @@ function formNascimento(lotesOpts: string, animaisOpts: string) {
           </div>
         </div>
         <div class="form-group">
-          <label class="form-label">Observação</label>
+          <label class="form-label">Observacao</label>
           <textarea class="form-textarea" name="observacao" rows="2"></textarea>
         </div>
         <button type="submit" class="btn btn--primario w-full">Registrar Nascimento</button>
@@ -998,6 +1497,20 @@ function formNascimento(lotesOpts: string, animaisOpts: string) {
 }
 
 function bindNascimento() {
+  // Carrega racas
+  api
+    .get<{ data: { id: string; nome: string }[] }>("/racas")
+    .then((res) => {
+      const sel = document.getElementById("sel-raca-nasc");
+      if (!sel) return;
+      sel.innerHTML =
+        '<option value="">Selecione</option>' +
+        res.data
+          .map((r) => `<option value="${r.nome}">${r.nome}</option>`)
+          .join("");
+    })
+    .catch(() => {});
+
   // Carrega vacas para campo mae
   api
     .get<{ data: Animal[] }>("/animais?categoria=vaca&pageSize=500")
@@ -1007,7 +1520,7 @@ function bindNascimento() {
       res.data.forEach((a) => {
         const opt = document.createElement("option");
         opt.value = a.id;
-        opt.textContent = `${a.brinco}${a.nome ? " — " + a.nome : ""}`;
+        opt.textContent = `${a.brinco}${a.nome ? " - " + a.nome : ""}`;
         sel.appendChild(opt);
       });
     })

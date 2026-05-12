@@ -1,30 +1,72 @@
-import { api } from '../lib/api.js'
-import { renderLayout } from '../components/layout.js'
-import { toast } from '../lib/toast.js'
-import { formatArroba } from '../utils/arroba.js'
+import { api } from "../lib/api.js";
+import { renderLayout } from "../components/layout.js";
+import { toast } from "../lib/toast.js";
+import { formatArroba } from "../utils/arroba.js";
 
-interface AnimalRow {
-  id: string; brinco: string; nome: string | null; raca: string
-  sexo: string; categoria: string; lote_nome: string | null
-  ultimo_peso_arroba: string | null; ativo: boolean
+interface Animal {
+  id: string;
+  brinco: string;
+  nome: string | null;
+  categoria: string;
 }
-interface Lote { id: string; nome: string; categoria_principal: string }
+interface AnimalRow {
+  id: string;
+  brinco: string;
+  nome: string | null;
+  raca: string;
+  sexo: string;
+  categoria: string;
+  lote_nome: string | null;
+  ultimo_peso_arroba: string | null;
+  ativo: boolean;
+}
+interface Lote {
+  id: string;
+  nome: string;
+  categoria_principal: string;
+}
 
 function categoriaBadge(cat: string) {
   const cores: Record<string, string> = {
-    bezerro: 'azul', bezerra: 'azul', novilha: 'verde',
-    vaca: 'verde', boi: 'amarelo', touro: 'vermelho',
-  }
-  return `<span class="badge badge--${cores[cat] ?? 'cinza'}">${cat}</span>`
+    bezerro: "azul",
+    bezerra: "azul",
+    novilha: "verde",
+    vaca: "verde",
+    boi: "amarelo",
+    touro: "vermelho",
+  };
+  return `<span class="badge badge--${cores[cat] ?? "cinza"}">${cat}</span>`;
 }
 
 async function carregarLotes(): Promise<Lote[]> {
-  const res = await api.get<{ data: Lote[] }>('/lotes')
-  return res.data
+  const res = await api.get<{ data: Lote[] }>("/lotes");
+  return res.data;
 }
 
-function modalCadastro(lotes: Lote[]): string {
-  const lotesOpts = lotes.map(l => `<option value="${l.id}">${l.nome}</option>`).join('')
+function modalCadastro(
+  lotes: Lote[],
+  vacas: Animal[] = [],
+  touros: Animal[] = [],
+  racas: { id: string; nome: string }[] = [],
+): string {
+  const lotesOpts = lotes
+    .map((l) => `<option value="${l.id}">${l.nome}</option>`)
+    .join("");
+  const vacasOpts = vacas
+    .map(
+      (a) =>
+        `<option value="${a.id}">${a.brinco}${a.nome ? " - " + a.nome : ""}</option>`,
+    )
+    .join("");
+  const tourosOpts = touros
+    .map(
+      (a) =>
+        `<option value="${a.id}">${a.brinco}${a.nome ? " - " + a.nome : ""}</option>`,
+    )
+    .join("");
+  const racasOpts = racas
+    .map((r) => `<option value="${r.nome}">${r.nome}</option>`)
+    .join("");
   return `
     <div class="modal-overlay" id="modal-animal">
       <div class="modal">
@@ -40,8 +82,11 @@ function modalCadastro(lotes: Lote[]): string {
               <input class="form-input" name="nome" placeholder="Opcional">
             </div>
             <div class="form-group">
-              <label class="form-label">Raça *</label>
-              <input class="form-input" name="raca" required placeholder="Ex: Nelore">
+              <label class="form-label">Raca *</label>
+              <select class="form-select" name="raca" required>
+                <option value="">Selecione a raca</option>
+                ${racasOpts}
+              </select>
             </div>
             <div class="form-group">
               <label class="form-label">Sexo *</label>
@@ -79,8 +124,24 @@ function modalCadastro(lotes: Lote[]): string {
               <input class="form-input" name="peso_entrada_arroba" type="number" step="0.001" placeholder="Ex: 18.500">
             </div>
           </div>
+          <div class="form-grid form-grid--2">
+            <div class="form-group">
+              <label class="form-label">Mae (apenas vacas)</label>
+              <select class="form-select" name="mae_id">
+                <option value="">Nao identificada</option>
+                ${vacasOpts}
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Pai (apenas touros)</label>
+              <select class="form-select" name="pai_id">
+                <option value="">Nao identificado</option>
+                ${tourosOpts}
+              </select>
+            </div>
+          </div>
           <div class="form-group">
-            <label class="form-label">Observação</label>
+            <label class="form-label">Observacao</label>
             <textarea class="form-textarea" name="observacao" rows="2"></textarea>
           </div>
           <div class="modal__footer">
@@ -90,26 +151,45 @@ function modalCadastro(lotes: Lote[]): string {
         </form>
       </div>
     </div>
-  `
+  `;
 }
 
 export async function animaisPage() {
-  renderLayout('Animais', '<div class="loading"><div class="spinner"></div>Carregando...</div>')
+  renderLayout(
+    "Animais",
+    '<div class="loading"><div class="spinner"></div>Carregando...</div>',
+  );
 
   try {
-    const [res, lotes] = await Promise.all([
-      api.get<{ data: AnimalRow[]; total: number }>('/animais?pageSize=50'),
+    const [res, lotesData, vacasRes, tourosRes, racasRes] = await Promise.all([
+      api.get<{ data: AnimalRow[]; total: number }>("/animais?pageSize=50"),
       carregarLotes(),
-    ])
+      api
+        .get<{ data: Animal[] }>("/animais?categoria=vaca&pageSize=500")
+        .catch(() => ({ data: [] as Animal[] })),
+      api
+        .get<{ data: Animal[] }>("/animais?categoria=touro&pageSize=500")
+        .catch(() => ({ data: [] as Animal[] })),
+      api
+        .get<{ data: { id: string; nome: string }[] }>("/racas")
+        .catch(() => ({ data: [] })),
+    ]);
+    const lotes = lotesData;
+    const vacas = vacasRes.data;
+    const touros = tourosRes.data;
+    const racas = racasRes.data;
 
-    const animais = res.data
+    const animais = res.data;
 
-    const linhas = animais.map(a => `
+    const linhas =
+      animais
+        .map(
+          (a) => `
       <tr>
         <td><strong>${a.brinco}</strong></td>
         <td>${a.nome ?? '<span class="text-muted">—</span>'}</td>
         <td>${a.raca}</td>
-        <td>${a.sexo === 'M' ? 'Macho' : 'Fêmea'}</td>
+        <td>${a.sexo === "M" ? "Macho" : "Fêmea"}</td>
         <td>${categoriaBadge(a.categoria)}</td>
         <td>${a.lote_nome ?? '<span class="text-muted">—</span>'}</td>
         <td class="text-right">${a.ultimo_peso_arroba ? formatArroba(parseFloat(a.ultimo_peso_arroba)) : '<span class="text-muted">—</span>'}</td>
@@ -117,9 +197,12 @@ export async function animaisPage() {
           <a href="#/animais/${a.id}" class="btn btn--fantasma" style="padding:var(--sp-1) var(--sp-3);font-size:.8rem">Ver</a>
         </td>
       </tr>
-    `).join('') || `<tr><td colspan="8"><div class="empty-state"><div class="empty-state__icon">🐄</div><h3>Nenhum animal cadastrado</h3></div></td></tr>`
+    `,
+        )
+        .join("") ||
+      `<tr><td colspan="8"><div class="empty-state"><div class="empty-state__icon">🐄</div><h3>Nenhum animal cadastrado</h3></div></td></tr>`;
 
-    document.getElementById('app')!.innerHTML = `
+    document.getElementById("app")!.innerHTML = `
       <div class="page-header">
         <div>
           <h2 class="page-header__title">Animais</h2>
@@ -141,49 +224,65 @@ export async function animaisPage() {
           </table>
         </div>
       </div>
-    `
+    `;
 
-    document.getElementById('btn-novo-animal')?.addEventListener('click', () => {
-      document.body.insertAdjacentHTML('beforeend', modalCadastro(lotes))
+    document
+      .getElementById("btn-novo-animal")
+      ?.addEventListener("click", () => {
+        document.body.insertAdjacentHTML(
+          "beforeend",
+          modalCadastro(lotes, vacas, touros, racas),
+        );
 
-      document.getElementById('btn-fechar-modal')?.addEventListener('click', () => {
-        document.getElementById('modal-animal')?.remove()
-      })
+        document
+          .getElementById("btn-fechar-modal")
+          ?.addEventListener("click", () => {
+            document.getElementById("modal-animal")?.remove();
+          });
 
-      document.getElementById('form-animal')?.addEventListener('submit', async (e) => {
-        e.preventDefault()
-        const form   = e.target as HTMLFormElement
-        const data   = Object.fromEntries(new FormData(form))
-        const payload: Record<string, unknown> = {
-          brinco:    data.brinco,
-          raca:      data.raca,
-          sexo:      data.sexo,
-          categoria: data.categoria,
-        }
-        if (data.nome)               payload.nome               = data.nome
-        if (data.lote_id)            payload.lote_id            = data.lote_id
-        if (data.data_nascimento)    payload.data_nascimento    = data.data_nascimento
-        if (data.peso_entrada_arroba) payload.peso_entrada_arroba = parseFloat(data.peso_entrada_arroba as string)
-        if (data.observacao)         payload.observacao         = data.observacao
+        document
+          .getElementById("form-animal")
+          ?.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const form = e.target as HTMLFormElement;
+            const data = Object.fromEntries(new FormData(form));
+            const payload: Record<string, unknown> = {
+              brinco: data.brinco,
+              raca: data.raca,
+              sexo: data.sexo,
+              categoria: data.categoria,
+            };
+            if (data.nome) payload.nome = data.nome;
+            if (data.lote_id) payload.lote_id = data.lote_id;
+            if (data.data_nascimento)
+              payload.data_nascimento = data.data_nascimento;
+            if (data.peso_entrada_arroba)
+              payload.peso_entrada_arroba = parseFloat(
+                data.peso_entrada_arroba as string,
+              );
+            if (data.mae_id) payload.mae_id = data.mae_id;
+            if (data.pai_id) payload.pai_id = data.pai_id;
+            if (data.observacao) payload.observacao = data.observacao;
 
-        try {
-          await api.post('/animais', payload)
-          toast.success('Animal cadastrado com sucesso!')
-          document.getElementById('modal-animal')?.remove()
-          animaisPage()
-        } catch (err) {
-          toast.error(err instanceof Error ? err.message : 'Erro ao cadastrar')
-        }
-      })
-    })
-
+            try {
+              await api.post("/animais", payload);
+              toast.success("Animal cadastrado com sucesso!");
+              document.getElementById("modal-animal")?.remove();
+              animaisPage();
+            } catch (err) {
+              toast.error(
+                err instanceof Error ? err.message : "Erro ao cadastrar",
+              );
+            }
+          });
+      });
   } catch (err) {
-    document.getElementById('app')!.innerHTML = `
+    document.getElementById("app")!.innerHTML = `
       <div class="empty-state">
         <div class="empty-state__icon">⚠</div>
         <h3>Erro ao carregar animais</h3>
-        <p class="text-muted mt-4">${err instanceof Error ? err.message : 'Erro desconhecido'}</p>
+        <p class="text-muted mt-4">${err instanceof Error ? err.message : "Erro desconhecido"}</p>
       </div>
-    `
+    `;
   }
 }

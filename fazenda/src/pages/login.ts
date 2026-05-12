@@ -112,6 +112,7 @@ export function loginPage() {
 
         auth.salvar(res.data.token, {
           ...res.data.usuario,
+          fazenda_id: (res.data.usuario as any).fazenda_id ?? null,
           senha_temporaria: res.data.senhaTemporaria,
         });
         window.location.hash = "/";

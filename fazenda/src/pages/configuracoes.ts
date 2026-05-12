@@ -13,7 +13,7 @@ interface UsuarioRow {
   created_at: string;
 }
 
-type Aba = "minha-conta" | "usuarios";
+type Aba = "minha-conta" | "usuarios" | "racas";
 
 export async function configuracoesPage(abaInicial: Aba = "minha-conta") {
   renderLayout(
@@ -31,9 +31,10 @@ export async function configuracoesPage(abaInicial: Aba = "minha-conta") {
         <p class="page-header__sub">Gerencie sua conta e usuarios do sistema</p>
       </div>
     </div>
-    <div style="display:flex;gap:var(--sp-2);margin-bottom:var(--sp-6)">
+    <div style="display:flex;gap:var(--sp-2);margin-bottom:var(--sp-6);flex-wrap:wrap">
       <button class="btn ${abaInicial === "minha-conta" ? "btn--primario" : "btn--fantasma"} aba-config" data-aba="minha-conta">Minha Conta</button>
       ${isAdmin ? `<button class="btn ${abaInicial === "usuarios" ? "btn--primario" : "btn--fantasma"} aba-config" data-aba="usuarios">Gerenciar Usuarios</button>` : ""}
+      ${auth.isOwner() || auth.isSuperAdmin() ? `<button class="btn ${abaInicial === "racas" ? "btn--primario" : "btn--fantasma"} aba-config" data-aba="racas">Racas Bovinas</button>` : ""}
     </div>
     <div id="config-conteudo"></div>
   `;
@@ -59,6 +60,7 @@ async function carregarAba(
   const el = document.getElementById("config-conteudo")!;
   if (aba === "minha-conta") renderMinhaConta(el, eu);
   if (aba === "usuarios" && isAdmin) await renderUsuarios(el, eu);
+  if (aba === "racas") await renderRacas(el);
 }
 
 function renderMinhaConta(
@@ -80,7 +82,7 @@ function renderMinhaConta(
           </div>
           <div class="form-group">
             <label class="form-label">Perfil</label>
-            <input class="form-input" value="${eu.perfil === "admin" ? "Administrador" : "Caseiro"}" disabled style="background:var(--cor-surface-2);color:var(--cor-texto-3)">
+            <input class="form-input" value="${{ owner: "Owner", super_admin: "Super Admin", admin: "Administrador", caseiro: "Caseiro" }[eu.perfil] ?? eu.perfil}" disabled style="background:var(--cor-surface-2);color:var(--cor-texto-3)">
             <p class="text-sm text-muted" style="margin-top:4px">O tipo de usuario nao pode ser alterado.</p>
           </div>
           <button type="submit" class="btn btn--primario">Salvar alteracoes</button>
@@ -161,15 +163,29 @@ async function renderUsuarios(
 ) {
   el.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
   try {
-    const res = await api.get<{ data: UsuarioRow[] }>("/auth/usuarios");
-    const usuarios = res.data;
+    const [usuariosRes, fazendasRes] = await Promise.all([
+      api.get<{ data: UsuarioRow[] }>("/auth/usuarios"),
+      auth.isOwner() || auth.isSuperAdmin()
+        ? api
+            .get<{ data: { id: string; nome: string }[] }>("/fazendas")
+            .catch(() => ({ data: [] }))
+        : Promise.resolve({ data: [] as { id: string; nome: string }[] }),
+    ]);
+    const usuarios = usuariosRes.data;
+    const fazendas = fazendasRes.data;
+    const fazendasOpts = fazendas
+      .map(
+        (f: { id: string; nome: string }) =>
+          `<option value="${f.id}">${f.nome}</option>`,
+      )
+      .join("");
 
     const linhas = usuarios
       .map(
         (u) => `
       <tr>
         <td><div style="font-weight:700">${u.nome}</div><div class="text-sm text-muted">${u.email}</div></td>
-        <td><span class="badge ${u.perfil === "admin" ? "badge--amarelo" : "badge--verde"}">${u.perfil === "admin" ? "Admin" : "Caseiro"}</span></td>
+        <td><span class="badge ${{ owner: "badge--terra", super_admin: "badge--azul", admin: "badge--amarelo", caseiro: "badge--verde" }[u.perfil] ?? "badge--cinza"}">${{ owner: "Owner", super_admin: "Super Admin", admin: "Admin", caseiro: "Caseiro" }[u.perfil] ?? u.perfil}</span></td>
         <td><span class="badge ${u.ativo ? "badge--verde" : "badge--cinza"}">${u.ativo ? "Ativo" : "Inativo"}</span></td>
         <td>${formatDate(u.created_at)}</td>
         <td>
@@ -217,10 +233,19 @@ async function renderUsuarios(
             </div>
             <div class="form-group">
               <label class="form-label">Perfil *</label>
-              <select class="form-select" name="perfil">
+              <select class="form-select" name="perfil" id="select-perfil-novo">
                 <option value="caseiro">Caseiro</option>
                 <option value="admin">Administrador</option>
+                ${auth.isOwner() ? '<option value="super_admin">Super Admin</option>' : ""}
               </select>
+            </div>
+            <div class="form-group" id="campo-fazenda-novo" style="${!fazendasOpts ? "display:none" : ""}">
+              <label class="form-label">Fazenda</label>
+              <select class="form-select" name="fazenda_id" id="select-fazenda-novo">
+                <option value="">Sem fazenda (Super Admin / Owner)</option>
+                ${fazendasOpts}
+              </select>
+              <p class="text-sm text-muted" style="margin-top:4px">Obrigatorio para perfis Admin e Caseiro.</p>
             </div>
             <div class="modal__footer">
               <button type="button" class="btn btn--fantasma" id="btn-fechar-novo-user">Cancelar</button>
@@ -268,7 +293,15 @@ async function renderUsuarios(
           new FormData(e.target as HTMLFormElement),
         );
         try {
-          await api.post("/auth/usuarios", data);
+          const perfil = data.perfil as string;
+          const fazendaId = data.fazenda_id as string;
+          // Super_admin sem fazenda usa rota /auth/usuarios
+          // Admin/caseiro usa rota /fazendas/:id/usuarios
+          if ((perfil === "admin" || perfil === "caseiro") && fazendaId) {
+            await api.post(`/fazendas/${fazendaId}/usuarios`, data);
+          } else {
+            await api.post("/auth/usuarios", data);
+          }
           toast.success("Usuario criado!");
           modalNovo.style.display = "none";
           await renderUsuarios(el, eu);
@@ -358,5 +391,152 @@ async function renderUsuarios(
     });
   } catch {
     el.innerHTML = `<div class="empty-state"><h3>Erro ao carregar usuarios</h3></div>`;
+  }
+}
+
+// ── RACAS BOVINAS ─────────────────────────────────────────────────────────────
+
+async function renderRacas(el: HTMLElement) {
+  el.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  try {
+    const res = await api.get<{
+      data: {
+        id: string;
+        nome: string;
+        origem: string | null;
+        ativo: boolean;
+      }[];
+    }>("/racas?todas=1");
+    const racas = res.data;
+
+    el.innerHTML = `
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--sp-5)">
+          <div class="card__title" style="margin-bottom:0">Racas Bovinas (${racas.length})</div>
+          <button class="btn btn--primario" id="btn-nova-raca">+ Nova Raca</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Nome</th><th>Origem</th><th>Status</th><th>Acoes</th></tr></thead>
+            <tbody>
+              ${racas
+                .map(
+                  (r) => `
+                <tr>
+                  <td><strong>${r.nome}</strong></td>
+                  <td>${r.origem ?? "-"}</td>
+                  <td><span class="badge ${r.ativo ? "badge--verde" : "badge--cinza"}">${r.ativo ? "Ativa" : "Inativa"}</span></td>
+                  <td>
+                    <div style="display:flex;gap:var(--sp-2)">
+                      <button class="btn btn--fantasma btn-edit-raca" data-id="${r.id}" data-nome="${r.nome}" data-origem="${r.origem ?? ""}"
+                        style="font-size:.75rem;padding:2px 10px">Editar</button>
+                      <button class="btn btn--fantasma btn-toggle-raca" data-id="${r.id}" data-ativo="${r.ativo}"
+                        style="font-size:.75rem;padding:2px 10px">${r.ativo ? "Desativar" : "Ativar"}</button>
+                    </div>
+                  </td>
+                </tr>`,
+                )
+                .join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="modal-overlay" id="modal-raca" style="display:none">
+        <div class="modal" style="max-width:420px">
+          <h2 class="modal__title" id="modal-raca-titulo">Nova Raca</h2>
+          <form id="form-raca">
+            <input type="hidden" id="raca-edit-id">
+            <div class="form-group">
+              <label class="form-label">Nome *</label>
+              <input class="form-input" id="raca-nome" name="nome" required placeholder="Ex: Nelore">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Origem</label>
+              <input class="form-input" id="raca-origem" name="origem" placeholder="Ex: Brasil">
+            </div>
+            <div class="modal__footer">
+              <button type="button" class="btn btn--fantasma" id="btn-fechar-raca">Cancelar</button>
+              <button type="submit" class="btn btn--primario">Salvar</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+
+    const modal = document.getElementById("modal-raca") as HTMLElement;
+    document.getElementById("btn-nova-raca")?.addEventListener("click", () => {
+      document.getElementById("modal-raca-titulo")!.textContent = "Nova Raca";
+      (document.getElementById("raca-edit-id") as HTMLInputElement).value = "";
+      (document.getElementById("raca-nome") as HTMLInputElement).value = "";
+      (document.getElementById("raca-origem") as HTMLInputElement).value = "";
+      modal.style.display = "flex";
+    });
+    document
+      .getElementById("btn-fechar-raca")
+      ?.addEventListener("click", () => (modal.style.display = "none"));
+
+    document.querySelectorAll(".btn-edit-raca").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const id = (btn as HTMLElement).dataset.id!;
+        const nome = (btn as HTMLElement).dataset.nome!;
+        const origem = (btn as HTMLElement).dataset.origem ?? "";
+        document.getElementById("modal-raca-titulo")!.textContent =
+          `Editar — ${nome}`;
+        (document.getElementById("raca-edit-id") as HTMLInputElement).value =
+          id;
+        (document.getElementById("raca-nome") as HTMLInputElement).value = nome;
+        (document.getElementById("raca-origem") as HTMLInputElement).value =
+          origem;
+        modal.style.display = "flex";
+      });
+    });
+
+    document
+      .getElementById("form-raca")
+      ?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const data = Object.fromEntries(
+          new FormData(e.target as HTMLFormElement),
+        );
+        const editId = (
+          document.getElementById("raca-edit-id") as HTMLInputElement
+        ).value;
+        try {
+          if (editId) {
+            await api.patch(`/racas/${editId}`, {
+              nome: data.nome,
+              origem: data.origem || undefined,
+            });
+            toast.success("Raca atualizada!");
+          } else {
+            await api.post("/racas", {
+              nome: data.nome,
+              origem: data.origem || undefined,
+            });
+            toast.success("Raca criada!");
+          }
+          modal.style.display = "none";
+          await renderRacas(el);
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : "Erro");
+        }
+      });
+
+    document.querySelectorAll(".btn-toggle-raca").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = (btn as HTMLElement).dataset.id!;
+        const ativo = (btn as HTMLElement).dataset.ativo === "true";
+        try {
+          await api.patch(`/racas/${id}/toggle`, {});
+          toast.success(`Raca ${ativo ? "desativada" : "ativada"}!`);
+          await renderRacas(el);
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : "Erro");
+        }
+      });
+    });
+  } catch {
+    el.innerHTML = `<div class="empty-state"><h3>Erro ao carregar racas</h3></div>`;
   }
 }

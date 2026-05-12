@@ -1,10 +1,11 @@
-export type PerfilUsuario = "admin" | "caseiro";
+export type PerfilUsuario = "owner" | "super_admin" | "admin" | "caseiro";
 
 export interface UsuarioLogado {
   id: string;
   nome: string;
   email: string;
   perfil: PerfilUsuario;
+  fazenda_id: string | null;
   senha_temporaria?: boolean;
 }
 
@@ -35,12 +36,25 @@ export const auth = {
     return !!this.token() && !!this.usuario();
   },
 
+  isOwner(): boolean {
+    return this.usuario()?.perfil === "owner";
+  },
+
+  isSuperAdmin(): boolean {
+    return this.usuario()?.perfil === "super_admin";
+  },
+
   isAdmin(): boolean {
-    return this.usuario()?.perfil === "admin";
+    const p = this.usuario()?.perfil;
+    return p === "admin" || p === "owner" || p === "super_admin";
   },
 
   isCaseiro(): boolean {
     return this.usuario()?.perfil === "caseiro";
+  },
+
+  fazendaId(): string | null {
+    return this.usuario()?.fazenda_id ?? null;
   },
 
   precisaTrocarSenha(): boolean {
@@ -58,10 +72,13 @@ export const auth = {
   logout() {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USUARIO_KEY);
+    localStorage.removeItem("fazenda_selecionada_id");
+    localStorage.removeItem("fazenda_selecionada_nome");
     window.location.hash = "/login";
   },
 };
 
+export const ROTAS_PAINEL_GLOBAL = new Set(["/painel"]);
 export const ROTAS_BLOQUEADAS_CASEIRO = new Set([
   "/animais",
   "/pesagens",
@@ -74,7 +91,12 @@ export const ROTAS_BLOQUEADAS_CASEIRO = new Set([
 
 export function podeAcessar(rota: string): boolean {
   if (!auth.logado()) return rota === "/login";
-  if (auth.isAdmin()) return true;
+  const perfil = auth.usuario()?.perfil;
+  if (perfil === "owner" || perfil === "super_admin") return true;
+  if (perfil === "admin") {
+    const base = "/" + rota.split("/")[1];
+    return !ROTAS_PAINEL_GLOBAL.has(base);
+  }
   const base = "/" + rota.split("/")[1];
-  return !ROTAS_BLOQUEADAS_CASEIRO.has(base);
+  return !ROTAS_BLOQUEADAS_CASEIRO.has(base) && !ROTAS_PAINEL_GLOBAL.has(base);
 }

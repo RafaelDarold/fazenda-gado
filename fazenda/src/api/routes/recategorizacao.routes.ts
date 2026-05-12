@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { recategorizacaoService } from '../../services/recategorizacao.service.js'
+import { recategorizacaoService } from "../../services/recategorizacao.service.js";
 import { asyncHandler } from "../middlewares/error.middleware.js";
 
 const router = Router();

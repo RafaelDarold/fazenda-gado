@@ -64,15 +64,21 @@ export class OcupacaoPastoRepository extends BaseRepository<OcupacaoPasto> {
     const id = uuid()
     const sql = `
       INSERT INTO ocupacao_pasto
-        (id, pasto_id, lote_id, data_entrada, quantidade_animais, lotacao_ua, observacao)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+        (id, fazenda_id, pasto_id, lote_id, data_entrada, quantidade_animais, lotacao_ua, observacao)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `
     const params = [
       id, dto.pasto_id, dto.lote_id, dto.data_entrada,
       dto.quantidade_animais, dto.lotacao_ua ?? null, dto.observacao ?? null,
     ]
-    if (conn) { await conn.execute(sql, params) } else { await execute(sql, params) }
-    return (await this.findById(id))!
+    if (conn) {
+      await conn.execute(sql, params)
+      const [[row]] = await conn.query<any[]>("SELECT * FROM ocupacao_pasto WHERE id = ? LIMIT 1", [id])
+      return row
+    } else {
+      await execute(sql, params)
+      return (await this.findById(id))!
+    }
   }
 
   /** Encerra a ocupação atual de um lote em um pasto */

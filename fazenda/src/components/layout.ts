@@ -1,7 +1,17 @@
 import { auth } from "../lib/auth.js";
 import { confirmar } from "../lib/toast.js";
 
+// Nav para owner/super_admin sem fazenda selecionada — apenas painel global
+const NAV_ITEMS_GLOBAL = [
+  { section: "Painel Global" },
+  { path: "/painel", icon: "⊞", label: "Todas as Fazendas" },
+  { section: "Conta" },
+  { path: "/configuracoes", icon: "⚙", label: "Configuracoes" },
+];
+
 const NAV_ITEMS_ADMIN = [
+  { section: "Painel" },
+  { path: "/painel", icon: "⊞", label: "Todas as Fazendas" },
   { section: "Principal" },
   { path: "/", icon: "◉", label: "Dashboard" },
   { section: "Rebanho" },
@@ -35,8 +45,15 @@ const ICONE_LOGOUT = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none
 export function renderLayout(pageTitle: string, content: string): void {
   const currentPath = window.location.hash.slice(1) || "/";
   const usuario = auth.usuario();
-  const navItems =
-    usuario?.perfil === "caseiro" ? NAV_ITEMS_CASEIRO : NAV_ITEMS_ADMIN;
+  const fazendaSelecionada = localStorage.getItem("fazenda_selecionada_id");
+  const isGlobal =
+    (usuario?.perfil === "owner" || usuario?.perfil === "super_admin") &&
+    !fazendaSelecionada;
+  const navItems = isGlobal
+    ? NAV_ITEMS_GLOBAL
+    : usuario?.perfil === "caseiro"
+      ? NAV_ITEMS_CASEIRO
+      : NAV_ITEMS_ADMIN;
 
   const navHtml = navItems
     .map((item) => {
@@ -59,18 +76,37 @@ export function renderLayout(pageTitle: string, content: string): void {
     year: "numeric",
   });
   const nomeUsuario = usuario?.nome ?? "";
-  const perfilLabel = usuario?.perfil === "admin" ? "Administrador" : "Caseiro";
+  const perfilMap: Record<string, string> = {
+    owner: "Owner",
+    super_admin: "Super Admin",
+    admin: "Administrador",
+    caseiro: "Caseiro",
+  };
+  const perfilColorMap: Record<string, string> = {
+    owner: "#c0392b",
+    super_admin: "#2563eb",
+    admin: "var(--dourado)",
+    caseiro: "var(--verde-claro)",
+  };
+  const perfilTextMap: Record<string, string> = {
+    owner: "#fff",
+    super_admin: "#fff",
+    admin: "var(--verde-escuro)",
+    caseiro: "#fff",
+  };
+  const perfilLabel = perfilMap[usuario?.perfil ?? ""] ?? usuario?.perfil ?? "";
   const perfilColor =
-    usuario?.perfil === "admin" ? "var(--dourado)" : "var(--verde-claro)";
-  const perfilText =
-    usuario?.perfil === "admin" ? "var(--verde-escuro)" : "#fff";
+    perfilColorMap[usuario?.perfil ?? ""] ?? "var(--verde-claro)";
+  const perfilText = perfilTextMap[usuario?.perfil ?? ""] ?? "#fff";
 
   document.getElementById("root")!.innerHTML = `
     <div class="layout">
       <aside class="sidebar">
         <div class="sidebar__logo">
           <div class="sidebar__logo-title">Gestao do Sitio</div>
-          <div class="sidebar__logo-sub">Sistema de Gado</div>
+          <div class="sidebar__logo-sub" id="sidebar-fazenda-nome">
+            ${isGlobal ? "Painel Global" : (localStorage.getItem("fazenda_selecionada_nome") ?? "Sistema de Gado")}
+          </div>
         </div>
 
         <nav class="sidebar__nav">${navHtml}</nav>
@@ -81,6 +117,24 @@ export function renderLayout(pageTitle: string, content: string): void {
             <div style="font-size:.82rem;font-weight:700;color:#fff;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${nomeUsuario}</div>
             <span style="background:${perfilColor};color:${perfilText};font-size:.65rem;font-weight:700;padding:2px 8px;border-radius:20px;letter-spacing:.04em">${perfilLabel}</span>
           </div>
+          ${
+            !isGlobal &&
+            (usuario?.perfil === "owner" || usuario?.perfil === "super_admin")
+              ? `
+          <button id="btn-trocar-fazenda" style="
+            display:flex;align-items:center;gap:8px;
+            width:100%;padding:6px 12px;
+            background:rgba(255,255,255,.06);
+            border:1px solid rgba(255,255,255,.1);
+            border-radius:6px;
+            color:rgba(255,255,255,.6);
+            font-size:.75rem;cursor:pointer;
+            font-family:inherit;margin-bottom:var(--sp-2)
+          ">
+            ← Trocar fazenda
+          </button>`
+              : ""
+          }
           <button id="btn-logout-sidebar" style="
             display:flex;align-items:center;gap:8px;
             width:100%;padding:8px 12px;
@@ -129,6 +183,26 @@ export function renderLayout(pageTitle: string, content: string): void {
     );
     if (ok) auth.logout();
   });
+
+  document
+    .getElementById("btn-trocar-fazenda")
+    ?.addEventListener("click", async () => {
+      const ok = await confirmar("Deseja voltar ao painel de fazendas?", {
+        titulo: "Trocar fazenda",
+        textoBotaoOk: "Voltar ao painel",
+        tipo: "info",
+      });
+      if (ok) {
+        localStorage.removeItem("fazenda_selecionada_id");
+        localStorage.removeItem("fazenda_selecionada_nome");
+        const u = auth.usuario();
+        if (u) {
+          (u as any).fazenda_id = null;
+          localStorage.setItem("fazenda_usuario", JSON.stringify(u));
+        }
+        window.location.hash = "/painel";
+      }
+    });
 }
 
 export function setLoading(msg = "Carregando...") {
